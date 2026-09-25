@@ -21,15 +21,15 @@
       ballR: 15,
       shrinkMs: 300,
       dropOffPad: 48,
-      gapW: 56,
+      gapW: 45,
       chuteH: 26,
       funnelDeg: 30
     };
 
     const Palette = [
-      '#c12b2b', '#cf7124', '#a99d2d', '#379856', '#2f61a7',
-      '#893a9e', '#9a6532', '#339996', '#aa375e', '#406f9f',
-      '#334da2', '#9e962e', '#bc592c', '#319b7d', '#5735a8'
+      '#ac4040', '#435592', '#b7733c', '#458a5b', '#814890', '#8e893e', 
+      '#408c77', '#8b6541', '#4d6f92', '#a86140',  '#9a4763', '#988f3e'
+
     ];
 
     class Person {
@@ -149,8 +149,9 @@
           this.people = data.people
             .filter(p => p && typeof p.name === 'string')
             .map((p, i) => new Person(
-              p.name,
-              Palette.includes(p.color) ? p.color : Palette[i % Palette.length],
+              p.name,              
+              //Palette.includes(p.color) ? p.color : Palette[i % Palette.length],
+              Palette[i % Palette.length],
               p.active !== false
             ));
           const tn = Number(data.teamN) | 0;
@@ -391,6 +392,15 @@
         this.setGoIdle();
       }
 
+      xDropPos(span, hole, p = 1.5) {
+        const side = (span - hole) * 0.5;
+        if (side <= 0) return span * 0.5;
+        const u = Math.random();
+        return u < 0.5
+          ? side * (2 * u) ** p
+          : span - side * (2 * (1 - u)) ** p;
+      }
+      
       releaseFromTop() {
         const w = this.canvas.width;
         const r = Config.ballR;
@@ -413,8 +423,8 @@
           tok.slot = -1;
           tok.seated = false;
           tok.frozen = false;
-          tok.grounded = false;
-          tok.x = margin + Math.random() * span;
+          tok.grounded = false;          
+          tok.x = margin + this.xDropPos( span, Config.gapW*3 );
           tok.y = -r - 16 - k * (r * 2 + 6) - Math.random() * 18;
           tok.vx = (Math.random() - 0.5) * 140;
           tok.vy = 20 + Math.random() * 50;
