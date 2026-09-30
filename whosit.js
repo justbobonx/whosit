@@ -83,6 +83,7 @@
         this.nameHolding = -1;
         this.nameHoldStart = 0;
         this.nameDidLong = false;
+        this.titleHolding = false;
         this.lastPointer = null;
         this.dragging = false;
         this.dragStartY = 0;
@@ -241,14 +242,14 @@
 
       commitName() {
         const name = this.nameInput.value.trim();
+        const i = this.editIndex;
         this.closeOverlay();
         if (!name) return;
-        if (this.editIndex >= 0 && this.editIndex < this.people.length) {
-          this.people[this.editIndex].name = name.slice(0, 12);
+        if (i >= 0 && i < this.people.length) {
+          this.people[i].name = name.slice(0, 12);
         } else {
           this.people.push(new Person(name, this.nextColor(), true));
         }
-        this.editIndex = -1;
         this.saveState();
         this.clampScroll();
       }
@@ -461,7 +462,8 @@
 
       hitList(x, y) {
         if (y < Config.toolbarH) {
-          if (x > this.canvas.width - 56) return { type: 'add' };
+          if (x > this.canvas.width - 108) return { type: 'add' };
+          if (x < 110) return { type: 'title' };
           return null;
         }
         if (y >= this.listBottom()) return null;
@@ -482,6 +484,7 @@
 
       clearHolds() {
         this.nameHolding = -1;
+        this.titleHolding = false;
       }
 
       onPointerDown(e) {
@@ -498,6 +501,9 @@
         const hit = this.hitList(x, y);
         if (hit && hit.type === 'chip') {
           this.nameHolding = hit.i;
+          this.nameHoldStart = performance.now();
+        } else if (hit && hit.type === 'title') {
+          this.titleHolding = true;
           this.nameHoldStart = performance.now();
         }
       }
@@ -874,6 +880,12 @@
           this.nameHolding = -1;
           this.nameDidLong = true;
           this.editPerson(idx);
+        } else if (this.titleHolding && now - this.nameHoldStart >= Config.longMs) {
+          this.titleHolding = false;
+          this.nameDidLong = true;
+          this.people = [];
+          this.saveState();
+          this.clampScroll();
         }
         if (this.mode === 'deal' || this.mode === 'done') this.updateDeal(dt);
       }
@@ -915,12 +927,12 @@
         if (this.mode === 'list') {
           ctx.fillStyle = '#2a5a3a';
           ctx.beginPath();
-          ctx.roundRect(w - 46, 8, 36, 32, 6);
+          ctx.roundRect(w - 98, 8, 88, 32, 6);
           ctx.fill();
           ctx.fillStyle = '#a8d0b0';
-          ctx.font = 'bold 24px system-ui, sans-serif';
+          ctx.font = 'bold 15px system-ui, sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText('+', w - 28, Config.toolbarH / 2 + 1);
+          ctx.fillText(' + Name', w - 54, Config.toolbarH / 2 + 1);
         }
       }
 
