@@ -32,6 +32,7 @@ class App {
     this.fillCount = 0;
     this.holeOpen = true;
     this.showFunnel = false;
+    this.heldLocks = [];
 
     this.fillSelects();
     this.bindUi();
@@ -60,7 +61,13 @@ class App {
       const data = {
         teamN: this.teamN,
         eachN: this.eachN,
-        people: this.people.map(p => ({ name: p.name, color: p.color, active: p.active }))
+        people: this.people.map(p => ({
+          name: p.name,
+          color: p.color,
+          active: p.active,
+          lockTeam: p.lockTeam,
+          lockSlot: p.lockSlot
+        }))
       };
       localStorage.setItem(Config.storageKey, JSON.stringify(data));
     } catch (e) {}
@@ -84,10 +91,11 @@ class App {
       this.people = data.people
         .filter(p => p && typeof p.name === 'string')
         .map((p, i) => new Person(
-          p.name,              
-          //Palette.includes(p.color) ? p.color : Palette[i % Palette.length],
+          p.name,
           Palette[i % Palette.length],
-          p.active !== false
+          p.active !== false,
+          p.lockTeam,
+          p.lockSlot
         ));
       const tn = Number(data.teamN) | 0;
       const en = Number(data.eachN) | 0;
@@ -209,7 +217,43 @@ class App {
 
   toggleActive(i) {
     if (i < 0 || i >= this.people.length) return;
+    if (this.people[i].locked) return;
     this.people[i].active = !this.people[i].active;
+    this.saveState();
+  }
+
+  lockKey(team, slot) {
+    return team + ':' + slot;
+  }
+
+  dropLock(p) {
+    p.lockTeam = -1;
+    p.lockSlot = -1;
+  }
+
+  scrubLocks() {
+    const seen = {};
+    for (const p of this.people) {
+      if (!p.locked) continue;
+      if (p.lockTeam >= this.teamN || p.lockSlot >= this.eachN) {
+        this.dropLock(p);
+        continue;
+      }
+      const key = this.lockKey(p.lockTeam, p.lockSlot);
+      if (seen[key]) this.dropLock(p);
+      else seen[key] = true;
+    }
+  }
+
+  toggleSeatLock(tok) {
+    if (!tok || !tok.person || tok.team < 0 || tok.slot < 0) return;
+    const p = tok.person;
+    if (p.lockTeam === tok.team && p.lockSlot === tok.slot) this.dropLock(p);
+    else {
+      p.lockTeam = tok.team;
+      p.lockSlot = tok.slot;
+      p.active = true;
+    }
     this.saveState();
   }
 
@@ -291,21 +335,37 @@ class App {
     if (this.mode !== 'list') return;
     this.teamN = Math.max(1, Math.min(9, Number(this.teamSel.value) | 0));
     this.eachN = Math.max(1, Math.min(9, Number(this.eachSel.value) | 0));
+    this.scrubLocks();
     this.saveState();
 
-    const active = [];
-    for (let i = 0; i < this.people.length; i++) {
-      if (this.people[i].active) active.push({ person: this.people[i], i });
-    }
     const need = this.needed();
-    if (active.length < need) {
-      this.msg = `Need ${need} active names`;
+    const locked = [];
+    for (const p of this.people) {
+      if (!p.locked) continue;
+      locked.push(p);
+    }
+    const empty = need - locked.length;
+    const pool = [];
+    for (let i = 0; i < this.people.length; i++) {
+      const p = this.people[i];
+      if (p.active && !p.locked) pool.push({ person: p, i });
+    }
+    if (pool.length < empty) {
+      this.msg = `Need ${empty} active names`;
       this.msgUntil = performance.now() + 1600;
       return;
     }
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0;
+      const tmp = pool[i];
+      pool[i] = pool[j];
+      pool[j] = tmp;
+    }
+    pool.length = empty;
 
+    this.heldLocks = locked;
     this.tokens = [];
-    for (const item of active) {
+    for (const item of pool) {
       const r = this.chipRect(item.i);
       this.tokens.push(new Token(item.person, r.x + r.w / 2, r.y + r.h / 2, r.w, r.h));
     }
@@ -313,13 +373,15 @@ class App {
     this.mode = 'deal';
     this.phaseT = 0;
     this.fillCount = 0;
-    this.holeOpen = true;
+    this.holeOpen = empty > 0;
     this.showFunnel = false;
     this.setGoBusy();
+    if (empty === 0) this.releaseFromTop();
   }
 
   finishDeal() {
     this.tokens = [];
+    this.heldLocks = [];
     this.mode = 'list';
     this.fillCount = 0;
     this.holeOpen = true;
@@ -350,6 +412,7 @@ class App {
     }
     for (let k = 0; k < order.length; k++) {
       const tok = this.tokens[order[k]];
+      if (tok.seated || tok.phase === 'seated') continue;
       tok.r = r;
       tok.w = r * 2;
       tok.h = r * 2;
@@ -365,8 +428,39 @@ class App {
       tok.vy = 20 + Math.random() * 50;
       tok.phase = 'play';
     }
-    this.fillCount = 0;
-    this.holeOpen = true;
+
+    const G = this.dealGeom();
+    const r0 = Config.ballR;
+    for (const p of this.heldLocks) {
+      let already = false;
+      for (const tok of this.tokens) {
+        if (tok.person === p) {
+          already = true;
+          break;
+        }
+      }
+      if (already) continue;
+      const dest = this.slotPos(p.lockTeam, p.lockSlot, G);
+      const tok = new Token(p, dest.x, dest.y, r0 * 2, r0 * 2);
+      tok.r = r0;
+      tok.team = p.lockTeam;
+      tok.slot = p.lockSlot;
+      tok.tx = dest.x;
+      tok.ty = dest.y;
+      tok.startW = dest.w;
+      tok.startH = dest.h;
+      tok.seated = true;
+      tok.phase = 'seated';
+      tok.morph = 0;
+      this.tokens.push(tok);
+    }
+
+    let seated = 0;
+    for (const tok of this.tokens) {
+      if (tok.seated || tok.phase === 'seated') seated++;
+    }
+    this.fillCount = seated;
+    this.holeOpen = seated < this.needed();
     this.showFunnel = true;
     this.phaseT = 0;
   }
@@ -375,7 +469,23 @@ class App {
     const need = this.needed();
     if (this.fillCount >= need) return false;
     const G = this.dealGeom();
-    const place = this.slotFromFill(this.fillCount);
+    let place = null;
+    for (let fillIndex = 0; fillIndex < need; fillIndex++) {
+      const cand = this.slotFromFill(fillIndex);
+      let used = false;
+      for (const other of this.tokens) {
+        if (other === tok) continue;
+        if (other.team === cand.team && other.slot === cand.slot) {
+          used = true;
+          break;
+        }
+      }
+      if (!used) {
+        place = cand;
+        break;
+      }
+    }
+    if (!place) return false;
     this.fillCount++;
     tok.team = place.team;
     tok.slot = place.slot;
@@ -421,9 +531,22 @@ class App {
     this.titleHolding = false;
   }
 
+  hitDone(x, y) {
+    for (let i = this.tokens.length - 1; i >= 0; i--) {
+      const tok = this.tokens[i];
+      if (!tok.seated) continue;
+      const hw = tok.w / 2;
+      const hh = tok.h / 2;
+      if (x >= tok.x - hw && x <= tok.x + hw && y >= tok.y - hh && y <= tok.y + hh) {
+        return tok;
+      }
+    }
+    return null;
+  }
+
   onPointerDown(e) {
     if (this.nameOverlay.classList.contains('show')) return;
-    if (this.mode !== 'list') return;
+    if (this.mode !== 'list' && this.mode !== 'done') return;
     e.preventDefault();
     const { x, y } = this.pointerPos(e);
     this.lastPointer = { x, y };
@@ -432,6 +555,7 @@ class App {
     this.dragScroll = this.scroll;
     this.nameDidLong = false;
     this.clearHolds();
+    if (this.mode !== 'list') return;
     const hit = this.hitList(x, y);
     if (hit && hit.type === 'chip') {
       this.nameHolding = hit.i;
@@ -460,13 +584,20 @@ class App {
 
   onPointerUp(e) {
     if (this.nameOverlay.classList.contains('show')) return;
-    if (this.mode !== 'list') return;
+    if (this.mode !== 'list' && this.mode !== 'done') return;
     e.preventDefault();
     if (!this.lastPointer) return;
     const { x, y } = this.lastPointer;
     this.lastPointer = null;
     const wasDrag = this.dragging;
     this.dragging = false;
+    if (this.mode === 'done') {
+      if (!wasDrag) {
+        const tok = this.hitDone(x, y);
+        if (tok) this.toggleSeatLock(tok);
+      }
+      return;
+    }
     if (this.nameDidLong) {
       this.nameDidLong = false;
       this.clearHolds();
@@ -521,6 +652,7 @@ class App {
         return;
       }
       this.teamN = Number(this.teamSel.value) | 0;
+      this.scrubLocks();
       this.saveState();
     });
     this.eachSel.addEventListener('change', () => {
@@ -529,6 +661,7 @@ class App {
         return;
       }
       this.eachN = Number(this.eachSel.value) | 0;
+      this.scrubLocks();
       this.saveState();
     });
     this.goBtn.addEventListener('click', () => {
@@ -692,11 +825,17 @@ class App {
     this.phaseT += dt;
     const n = this.tokens.length;
     if (!n) return;
+    const need = this.needed();
 
-    if (this.tokens[0].phase === 'shrink') {
+    const movers = [];
+    for (const tok of this.tokens) {
+      if (!tok.seated && tok.phase !== 'seated') movers.push(tok);
+    }
+
+    if (movers.length && movers[0].phase === 'shrink') {
       const u = Math.min(1, this.phaseT / (Config.shrinkMs / 1000));
       const e = 1 - Math.pow(1 - u, 3);
-      for (const tok of this.tokens) {
+      for (const tok of movers) {
         const tw = tok.r * 2;
         const th = tok.r * 2;
         tok.w = tok.startW + (tw - tok.startW) * e;
@@ -705,7 +844,7 @@ class App {
       }
       if (u >= 1) {
         this.phaseT = 0;
-        for (const tok of this.tokens) {
+        for (const tok of movers) {
           tok.phase = 'drop';
           tok.morph = 0;
           tok.w = tok.r * 2;
@@ -717,20 +856,19 @@ class App {
       return;
     }
 
-    if (this.tokens[0].phase === 'drop') {
+    if (movers.length && movers[0].phase === 'drop') {
       let gone = 0;
-      for (const tok of this.tokens) {
+      for (const tok of movers) {
         tok.vy += Config.gravity * dt;
         tok.x += tok.vx * dt;
         tok.y += tok.vy * dt;
         if (tok.y - tok.r > this.canvas.height + Config.dropOffPad) gone++;
       }
-      if (gone === n) this.releaseFromTop();
+      if (gone === movers.length) this.releaseFromTop();
       return;
     }
 
     const G = this.dealGeom();
-    const need = this.needed();
     const steps = 4;
     const sdt = dt / steps;
     for (let s = 0; s < steps; s++) {
@@ -824,20 +962,41 @@ class App {
     if (this.mode === 'deal' || this.mode === 'done') this.updateDeal(dt);
   }
 
-  drawChip(x, y, w, h, fill, name, active) {
+  drawChip(x, y, w, h, fill, name, active, lockMark) {
     const ctx = this.ctx;
     const r = Math.min(h * 0.45, 14);
     ctx.fillStyle = active ? fill : '#6a6a64';
     ctx.beginPath();
     ctx.roundRect(x - w / 2, y - h / 2, w, h, r);
     ctx.fill();
-    ctx.fillStyle = active ? '#eeeeee' : '#3a3a36';
     ctx.fillStyle = active ? 'rgba(255, 255, 255, 0.82)' : 'rgba(0, 0, 0, 0.7)';
-    const fs = Math.min(18, Math.max(12, w / Math.max(name.length * 0.62, 4)));
+    const label = lockMark ? String(lockMark) : '';
+    const nameRoom = label ? w - 36 : w;
+    const fs = Math.min(18, Math.max(11, nameRoom / Math.max(name.length * 0.62, 4)));
     ctx.font = `500 ${fs}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(name, x, y + 0.5);
+    ctx.fillText(name, x + (label ? 8 : 0), y + 0.5);
+    if (label) {
+      const lx = x - w / 2 + 12;
+      const ly = y - 3;
+      const s = Math.min(11, h * 0.28);
+      ctx.strokeStyle = active ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.7)';
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(lx, ly, s * 0.38, Math.PI, 0);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.roundRect(lx - s * 0.42, ly + 1, s * 0.84, s * 0.72, 1.5);
+      ctx.fill();
+      if (label !== 'lock') {
+        ctx.font = `600 ${Math.max(9, Math.min(11, h * 0.28))}px system-ui, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, lx + s * 0.62, y + 0.5);
+      }
+    }
   }
 
   drawToolbar() {
@@ -933,7 +1092,8 @@ class App {
         const r = this.chipRect(i);
         if (r.y + r.h < top || r.y > bot) continue;
         const p = this.people[i];
-        this.drawChip(r.x + r.w / 2, r.y + r.h / 2, r.w, r.h, p.color, p.name, p.active);
+        const lockMark = p.locked ? `${p.lockTeam + 1}:${p.lockSlot + 1}` : '';
+        this.drawChip(r.x + r.w / 2, r.y + r.h / 2, r.w, r.h, p.color, p.name, p.active || p.locked, lockMark);
       }
     }
     ctx.restore();
@@ -954,7 +1114,8 @@ class App {
   drawTokens() {
     for (const tok of this.tokens) {
       const name = tok.morph > 0.55 ? tok.person.name : '';
-      this.drawChip(tok.x, tok.y, tok.w, tok.h, tok.person.color, name, true);
+      const lockMark = tok.person.locked && tok.seated ? 'lock' : '';
+      this.drawChip(tok.x, tok.y, tok.w, tok.h, tok.person.color, name, true, lockMark);
     }
   }
 

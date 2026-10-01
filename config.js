@@ -4,7 +4,7 @@ const Config = {
   listPad: 14,
   chipH: 44,
   chipGap: 10,
-  listChipW: 176,
+  listChipW: 210,
   slotChipW: 148,
   longMs: 400,
   storageKey: 'whosit_people_v1',
