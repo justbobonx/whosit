@@ -343,6 +343,14 @@ class Whosit {
     ctx.beginPath();
     ctx.roundRect(x - w / 2, y - h / 2, w, h, r);
     ctx.fill();
+    if (!name) {
+      ctx.beginPath();
+      ctx.arc(x - r * 0.12, y - r * 0.14, r * 0.52, -Math.PI * 0.9, -Math.PI * 0.4);
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = Math.max(2, r * 0.26);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
     ctx.fillStyle = active ? 'rgba(255, 255, 255, 0.82)' : 'rgba(0, 0, 0, 0.7)';
     const label = lockMark ? String(lockMark) : '';
     const fs = Math.min(18, Math.max(11, w / Math.max(name.length * 0.62, 4)));

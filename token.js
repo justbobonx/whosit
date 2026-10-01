@@ -19,5 +19,7 @@ class Token {
     this.seated = false;
     this.frozen = false;
     this.grounded = false;
+    this.bounces = 0;
+    this.bounceCd = 0;
   }
 }

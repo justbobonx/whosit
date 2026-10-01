@@ -23,7 +23,9 @@ const Config = {
   dropOffPad: 48,
   gapW: 50,
   chuteH: 26,
-  funnelDeg: 30
+  funnelDeg: 30,
+  introBounces: 6,
+  introRest: 0.94
 };
 
 const Palette = [

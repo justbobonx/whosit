@@ -164,6 +164,8 @@ class Deal {
       tok.seated = false;
       tok.frozen = false;
       tok.grounded = false;
+      tok.bounces = 0;
+      tok.bounceCd = 0;
       tok.x = margin + this.xDropPos(span, Config.gapW * 3);
       tok.y = -r - 16 - k * (r * 2 + 6) - Math.random() * 18;
       tok.vx = (Math.random() - 0.5) * 140;
@@ -245,7 +247,7 @@ class Deal {
     let hy;
     if (rawT > 0 && rawT < 1) {
       const signed = dx * nx + dy * ny;
-      if (signed >= tok.r) return false;
+      if (signed >= tok.r) return null;
       hx = nx;
       hy = ny;
       const pen = tok.r - signed;
@@ -253,7 +255,7 @@ class Deal {
       tok.y += hy * pen;
     } else {
       const dist = Math.hypot(dx, dy);
-      if (dist >= tok.r || dist < 1e-8) return false;
+      if (dist >= tok.r || dist < 1e-8) return null;
       hx = dx / dist;
       hy = dy / dist;
       const pen = tok.r - dist;
@@ -273,7 +275,7 @@ class Deal {
       tok.vx -= vt * kill * tx;
       tok.vy -= vt * kill * ty;
     }
-    return true;
+    return { vn };
   }
 
   collidePlayBalls(G) {
@@ -281,11 +283,11 @@ class Deal {
     for (let i = 0; i < list.length; i++) {
       const a = list[i];
       if (a.phase !== 'play' || a.frozen) continue;
-      const aDrain = this.inDrain(a, G);
+      const aDrain = a.bounces >= Config.introBounces && this.inDrain(a, G);
       for (let j = i + 1; j < list.length; j++) {
         const b = list[j];
         if (b.phase !== 'play' || b.frozen) continue;
-        const bDrain = this.inDrain(b, G);
+        const bDrain = b.bounces >= Config.introBounces && this.inDrain(b, G);
         if (aDrain && bDrain) continue;
         const dx = b.x - a.x;
         const dy = b.y - a.y;
@@ -329,20 +331,34 @@ class Deal {
   }
 
   resolvePlayBounds(tok, G) {
+    const markBounce = (vn) => {
+      if (vn < -40 && tok.bounceCd <= 0) {
+        tok.bounces++;
+        tok.bounceCd = 0.08;
+      }
+    };
+
     const left = tok.r + 2;
     const right = G.w - tok.r - 2;
     if (tok.x < left) {
       tok.x = left;
-      if (tok.vx < 0) tok.vx = -tok.vx * Config.edgeRest;
+      if (tok.vx < 0) {
+        markBounce(tok.vx);
+        tok.vx = -tok.vx * Config.edgeRest;
+      }
       tok.grounded = true;
     } else if (tok.x > right) {
       tok.x = right;
-      if (tok.vx > 0) tok.vx = -tok.vx * Config.edgeRest;
+      if (tok.vx > 0) {
+        markBounce(-tok.vx);
+        tok.vx = -tok.vx * Config.edgeRest;
+      }
       tok.grounded = true;
     }
 
+    const intro = tok.bounces < Config.introBounces;
     const closed = !this.holeOpen;
-    const drain = !closed && this.inDrain(tok, G);
+    const drain = !closed && !intro && this.inDrain(tok, G);
 
     const lvx = G.holeL - G.rampLX;
     const lvy = G.chuteTop - G.rampLY;
@@ -354,19 +370,33 @@ class Deal {
     const fric = Config.rampFric;
 
     if (!drain) {
-      if (this.bounceSegment(tok, G.rampLX, G.rampLY, G.holeL, G.chuteTop, lvy / llen, -lvx / llen, rest, fric)) tok.grounded = true;
-      if (this.bounceSegment(tok, G.rampRX, G.rampRY, G.holeR, G.chuteTop, -rvy / rlen, rvx / rlen, rest, fric)) tok.grounded = true;
-      if (tok.y + tok.r > G.chuteTop) {
+      const leftHit = this.bounceSegment(tok, G.rampLX, G.rampLY, G.holeL, G.chuteTop, lvy / llen, -lvx / llen, rest, fric);
+      if (leftHit) {
+        tok.grounded = true;
+        markBounce(leftHit.vn);
+      }
+      const rightHit = this.bounceSegment(tok, G.rampRX, G.rampRY, G.holeR, G.chuteTop, -rvy / rlen, rvx / rlen, rest, fric);
+      if (rightHit) {
+        tok.grounded = true;
+        markBounce(rightHit.vn);
+      }
+      if (!intro && tok.y + tok.r > G.chuteTop) {
         this.bounceSegment(tok, G.holeL, G.chuteTop, G.holeL, G.lineY, 1, 0, 0, 0.02);
         this.bounceSegment(tok, G.holeR, G.chuteTop, G.holeR, G.lineY, -1, 0, 0, 0.02);
       }
     }
 
-    if (closed) {
-      if (this.bounceSegment(tok, 0, G.lineY, G.w, G.lineY, 0, -1, Config.restBot, 0.06)) tok.grounded = true;
+    if (intro || closed) {
+      const floorHit = this.bounceSegment(tok, 0, G.lineY, G.w, G.lineY, 0, -1, intro ? Config.introRest : Config.restBot, 0.06);
+      if (floorHit) {
+        tok.grounded = true;
+        if (intro) markBounce(floorHit.vn);
+      }
     } else if (!drain) {
-      if (this.bounceSegment(tok, 0, G.lineY, G.holeL, G.lineY, 0, -1, Config.restBot, 0.06)) tok.grounded = true;
-      if (this.bounceSegment(tok, G.holeR, G.lineY, G.w, G.lineY, 0, -1, Config.restBot, 0.06)) tok.grounded = true;
+      const leftLip = this.bounceSegment(tok, 0, G.lineY, G.holeL, G.lineY, 0, -1, Config.restBot, 0.06);
+      if (leftLip) tok.grounded = true;
+      const rightLip = this.bounceSegment(tok, G.holeR, G.lineY, G.w, G.lineY, 0, -1, Config.restBot, 0.06);
+      if (rightLip) tok.grounded = true;
     }
 
     if (drain) {
@@ -432,6 +462,7 @@ class Deal {
       for (const tok of this.tokens) {
         if (tok.phase !== 'play' || tok.frozen) continue;
         tok.grounded = false;
+        if (tok.bounceCd > 0) tok.bounceCd -= sdt;
         tok.vy += Config.bounceG * sdt;
         tok.vx *= Math.pow(0.997, sdt * 60);
         tok.vy *= Math.pow(0.997, sdt * 60);
