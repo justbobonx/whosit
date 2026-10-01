@@ -18,10 +18,10 @@ const Config = {
   ballRestGround: 0.42,
   rampFric: 0.01,
   slotSpeed: 540,
-  ballR: 15,
+  ballR: 20,
   shrinkMs: 300,
   dropOffPad: 48,
-  gapW: 45,
+  gapW: 50,
   chuteH: 26,
   funnelDeg: 30
 };

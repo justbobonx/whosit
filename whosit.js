@@ -311,7 +311,7 @@ class Whosit {
 
   drawChip(x, y, w, h, fill, name, active, lockMark) {
     const ctx = this.ctx;
-    const r = Math.min(h * 0.45, 14);
+    const r = Math.min(h * 0.45, Config.ballR);
     ctx.fillStyle = active ? fill : '#6a6a64';
     ctx.beginPath();
     ctx.roundRect(x - w / 2, y - h / 2, w, h, r);
