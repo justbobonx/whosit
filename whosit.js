@@ -72,25 +72,52 @@ class Whosit {
   }
 
   loadState() {
+    let urlNames = null;
+    const namesParam = new URLSearchParams(location.search).get('names');
+    if (namesParam) {
+      urlNames = namesParam.split(',').map(s => s.trim()).filter(Boolean);
+      if (!urlNames.length) urlNames = null;
+    }
     try {
       const raw = localStorage.getItem(Config.storageKey);
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      if (!data || !Array.isArray(data.people)) return;
-      this.roster.loadPeople(data.people);
-      const tn = Number(data.teamN) | 0;
-      const en = Number(data.eachN) | 0;
-      if (tn >= 1 && tn <= 9) {
-        this.teamN = tn;
-        this.teamSel.value = String(tn);
+      const data = raw ? JSON.parse(raw) : null;
+      if (urlNames) {
+        this.roster.loadPeople(urlNames.map(name => ({ name })));
+      } else if (data && Array.isArray(data.people)) {
+        this.roster.loadPeople(data.people);
       }
-      if (en >= 1 && en <= 9) {
-        this.eachN = en;
-        this.eachSel.value = String(en);
+      if (data) {
+        const tn = Number(data.teamN) | 0;
+        const en = Number(data.eachN) | 0;
+        if (tn >= 1 && tn <= 9) {
+          this.teamN = tn;
+          this.teamSel.value = String(tn);
+        }
+        if (en >= 1 && en <= 9) {
+          this.eachN = en;
+          this.eachSel.value = String(en);
+        }
+      }
+      if (urlNames) {
+        this.saveState();
+        this.clearNamesParam();
       }
     } catch (e) {
-      this.roster.clear();
+      if (urlNames) {
+        this.roster.loadPeople(urlNames.map(name => ({ name })));
+        this.saveState();
+        this.clearNamesParam();
+      } else {
+        this.roster.clear();
+      }
     }
+  }
+
+  clearNamesParam() {
+    const url = new URL(location.href);
+    if (!url.searchParams.has('names')) return;
+    url.searchParams.delete('names');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
   }
 
   resize() {
