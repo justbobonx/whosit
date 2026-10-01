@@ -112,8 +112,7 @@ class Deal {
     }
 
     this.fillCount = locked.length;
-    this.holeOpen = this.fillCount < need;
-    this.showFunnel = true;
+    this.holeOpen = this.fillCount < need;    
     this.phaseT = 0;
     if (!movers.length) this.finished = this.fillCount >= need;
     return { ok: true };

@@ -461,6 +461,7 @@ class Whosit {
 
   drawTokens() {
     for (const tok of this.deal.tokens) {
+      if (tok.seated && !this.deal.showFunnel) continue;
       const name = tok.morph > 0.55 ? tok.person.name : '';
       const lockMark = tok.person.locked && tok.seated ? 'lock' : '';
       this.drawChip(tok.x, tok.y, tok.w, tok.h, tok.person.color, name, true, lockMark);
