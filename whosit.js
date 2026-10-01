@@ -318,16 +318,24 @@ class Whosit {
     ctx.fill();
     ctx.fillStyle = active ? 'rgba(255, 255, 255, 0.82)' : 'rgba(0, 0, 0, 0.7)';
     const label = lockMark ? String(lockMark) : '';
-    const nameRoom = label ? w - 36 : w;
-    const fs = Math.min(18, Math.max(11, nameRoom / Math.max(name.length * 0.62, 4)));
+    const fs = Math.min(18, Math.max(11, w / Math.max(name.length * 0.62, 4)));
     ctx.font = `500 ${fs}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(name, x + (label ? 8 : 0), y + 0.5);
+    ctx.fillText(name, x, y + 0.5);
     if (label) {
-      const lx = x - w / 2 + 12;
-      const ly = y - 3;
       const s = Math.min(11, h * 0.28);
+      const left = x - w / 2 + 8;
+      const showSeat = label !== 'lock';
+      let lx = left + s * 0.42;
+      if (showSeat) {
+        ctx.font = `600 ${Math.max(9, Math.min(11, h * 0.28))}px system-ui, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, left, y + 0.5);
+        lx = left + ctx.measureText(label).width + s * 0.55;
+      }
+      const ly = y - 3;
       ctx.strokeStyle = active ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.7)';
       ctx.fillStyle = ctx.strokeStyle;
       ctx.lineWidth = 1.6;
@@ -337,12 +345,6 @@ class Whosit {
       ctx.beginPath();
       ctx.roundRect(lx - s * 0.42, ly + 1, s * 0.84, s * 0.72, 1.5);
       ctx.fill();
-      if (label !== 'lock') {
-        ctx.font = `600 ${Math.max(9, Math.min(11, h * 0.28))}px system-ui, sans-serif`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(label, lx + s * 0.62, y + 0.5);
-      }
     }
   }
 
@@ -440,7 +442,7 @@ class Whosit {
         const r = roster.chipRect(i);
         if (r.y + r.h < top || r.y > bot) continue;
         const p = roster.people[i];
-        const lockMark = p.locked ? `${p.lockTeam + 1}:${p.lockSlot + 1}` : '';
+        const lockMark = p.locked ? `${p.lockTeam + 1}:${p.lockSlot + 1}  ` : '';
         this.drawChip(r.x + r.w / 2, r.y + r.h / 2, r.w, r.h, p.color, p.name, p.active || p.locked, lockMark);
       }
     }
